@@ -1,47 +1,89 @@
 //@version=5
-indicator("Bullish Divergence Breakout Pro [Polished Compact]", overlay=true, max_labels_count=1000, max_lines_count=500)
-useRSI=input.bool(false,"Use RSI instead of MACD?") 
-rsiLen=input.int(14,"RSI Length",minval=2) 
-fastLen=input.int(12,"MACD Fast Length",minval=1) 
-slowLen=input.int(26,"MACD Slow Length",minval=1) 
-sigLen=input.int(9,"MACD Signal Length",minval=1) 
-pivotLen=input.int(5,"Pivot Strength",minval=1) 
-stopOffset=input.float(0.5,"Stop-Loss Offset %",minval=0.0) 
-showTrend=input.bool(true,"Show Descending Trendline") 
-showDiv=input.bool(true,"Show Divergence Labels") 
-showStops=input.bool(true,"Show Stop-Loss Levels") 
-showMACD=input.bool(true,"Show MACD Panel") 
-macdLine=ta.ema(close,fastLen)-ta.ema(close,slowLen) 
-signal=ta.ema(macdLine,sigLen) 
-hist=macdLine-signal 
-rsi=ta.rsi(close,rsiLen) 
-osc=useRSI?rsi:hist 
-pHigh=ta.pivothigh(high,pivotLen,pivotLen) 
-pLow=ta.pivotlow(low,pivotLen,pivotLen) 
-oLow=ta.pivotlow(osc,pivotLen,pivotLen) 
-var line trendLine=na 
-trendBreak=false 
-if showTrend and not na(pHigh) 
-    if na(trendLine) 
-        trendLine:=line.new(bar_index-pivotLen,high[pivotLen],bar_index-pivotLen,high[pivotLen],color=color.black,style=line.style_dotted,width=2,extend=extend.right) 
-    else 
-        line.delete(trendLine) 
-        trendLine:=line.new(bar_index[pivotLen*2],high[pivotLen*2],bar_index-pivotLen,high[pivotLen],color=color.black,style=line.style_dotted,width=2,extend=extend.right) 
-if showTrend and not na(trendLine) 
-    trendBreak:=close>line.get_price(trendLine,bar_index) 
-bullDiv=(not na(pLow) and not na(oLow) and low[pivotLen]<low[pivotLen*2] and osc[pivotLen]>osc[pivotLen*2]) 
-if showDiv and bullDiv 
-    label.new(bar_index-pivotLen,low[pivotLen],"Bull Div 🟢",style=label.style_label_up,color=color.green,textcolor=color.white) 
-longEntry=bullDiv and trendBreak 
-var float stopLevel=na 
-if longEntry 
-    label.new(bar_index,close,"🟢 Buy Entry",style=label.style_label_up,color=color.green,textcolor=color.white) 
-    stopLevel:=low[pivotLen]*(1-stopOffset/100) 
-    if showStops 
-        line.new(bar_index,stopLevel,bar_index+10,stopLevel,style=line.style_dashed,color=color.red,width=2,extend=extend.right) 
-        label.new(bar_index,stopLevel,"⛔ Stop Loss",style=label.style_label_down,color=color.red,textcolor=color.white) 
-if longEntry 
-    alert("🟢 Buy Signal! Stop Loss: "+str.tostring(stopLevel,format.mintick),alert.freq_once_per_bar_close) 
-plot(macdLine,title="MACD Line",color=color.blue,display=showMACD?display.all:display.none) 
-plot(signal,title="Signal Line",color=color.orange,display=showMACD?display.all:display.none) 
-plot(hist,title="Histogram",style=plot.style_columns,color=hist>=0?color.green:color.red,display=showMACD?display.all:display.none)
+indicator("Divergence Breakout Pro [Bullish & Bearish]", overlay=true, max_labels_count=500, max_lines_count=500)
+
+// === Inputs ===
+useRSI   = input.bool(false,"Use RSI instead of MACD?")
+rsiLen   = input.int(14,"RSI Length",minval=2)
+fastLen  = input.int(12,"MACD Fast Length")
+slowLen  = input.int(26,"MACD Slow Length")
+sigLen   = input.int(9,"MACD Signal Length")
+pivotLen = input.int(5,"Pivot Lookback Strength",minval=1)
+
+stopPct  = input.float(0.5,"Stop Offset %",minval=0.0)
+showTrend= input.bool(true,"Show Trendlines")
+showDiv  = input.bool(true,"Show Divergence Labels")
+showStops= input.bool(true,"Show Stop-Loss Lines")
+showMACD = input.bool(true,"Show MACD Panel")
+showChan = input.bool(true,"Show Blue Background")
+
+// === Oscillator ===
+macdLine = ta.ema(close,fastLen)-ta.ema(close,slowLen)
+signal   = ta.ema(macdLine,sigLen)
+hist     = macdLine-signal
+rsi      = ta.rsi(close,rsiLen)
+osc      = useRSI ? rsi : hist
+
+// === Channel Background ===
+basis = ta.sma(close,20)
+dev   = ta.stdev(close,20)*2
+bgcolor(showChan ? color.new(color.blue,90) : na)
+
+// === Pivots ===
+pHigh = ta.pivothigh(high,pivotLen,pivotLen)
+pLow  = ta.pivotlow(low,pivotLen,pivotLen)
+oHigh = ta.pivothigh(osc,pivotLen,pivotLen)
+oLow  = ta.pivotlow(osc,pivotLen,pivotLen)
+
+// === Trendlines ===
+var line resLine=na
+var line supLine=na
+// update resistance (descending highs)
+if showTrend and not na(pHigh)
+    if not na(resLine)
+        line.delete(resLine)
+    resLine:=line.new(bar_index[pivotLen*2],high[pivotLen*2],bar_index-pivotLen,high[pivotLen],color=color.black,style=line.style_dotted,width=2,extend=extend.right)
+// update support (ascending lows)
+if showTrend and not na(pLow)
+    if not na(supLine)
+        line.delete(supLine)
+    supLine:=line.new(bar_index[pivotLen*2],low[pivotLen*2],bar_index-pivotLen,low[pivotLen],color=color.black,style=line.style_dotted,width=2,extend=extend.right)
+
+// === Divergence Conditions ===
+bullDiv=not na(pLow) and not na(oLow) and low[pivotLen]<low[pivotLen*2] and osc[pivotLen]>osc[pivotLen*2]
+bearDiv=not na(pHigh) and not na(oHigh) and high[pivotLen]>high[pivotLen*2] and osc[pivotLen]<osc[pivotLen*2]
+
+// === Divergence Labels ===
+if showDiv and bullDiv
+    label.new(bar_index-pivotLen,low[pivotLen],"Bull Div 🟢",style=label.style_label_up,color=color.green,textcolor=color.white)
+if showDiv and bearDiv
+    label.new(bar_index-pivotLen,high[pivotLen],"Bear Div 🔴",style=label.style_label_down,color=color.red,textcolor=color.white)
+
+// === Entry Signals ===
+bullEntry=bullDiv and not na(resLine) and close>line.get_price(resLine,bar_index)
+bearEntry=bearDiv and not na(supLine) and close<line.get_price(supLine,bar_index)
+
+// === Plot Entries + Stops ===
+var float stopLvl=na
+if bullEntry
+    label.new(bar_index,close,"🟢 Buy Entry",style=label.style_label_up,color=color.green,textcolor=color.white)
+    stopLvl:=low[pivotLen]*(1-stopPct/100)
+    if showStops
+        line.new(bar_index,stopLvl,bar_index+5,stopLvl,style=line.style_dashed,color=color.red,width=2,extend=extend.right)
+        label.new(bar_index,stopLvl,"⛔ Stop Loss",style=label.style_label_down,color=color.red,textcolor=color.white)
+if bearEntry
+    label.new(bar_index,close,"🔴 Short Entry",style=label.style_label_down,color=color.red,textcolor=color.white)
+    stopLvl:=high[pivotLen]*(1+stopPct/100)
+    if showStops
+        line.new(bar_index,stopLvl,bar_index+5,stopLvl,style=line.style_dashed,color=color.green,width=2,extend=extend.right)
+        label.new(bar_index,stopLvl,"⛔ Stop Loss",style=label.style_label_up,color=color.green,textcolor=color.white)
+
+// === Alerts ===
+if bullEntry
+    alert("🟢 Buy Signal! Stop: "+str.tostring(stopLvl,format.mintick),alert.freq_once_per_bar_close)
+if bearEntry
+    alert("🔴 Short Signal! Stop: "+str.tostring(stopLvl,format.mintick),alert.freq_once_per_bar_close)
+
+// === MACD Panel (optional) ===
+plot(macdLine,"MACD Line",color=color.blue,display=showMACD?display.all:display.none)
+plot(signal,"Signal",color=color.orange,display=showMACD?display.all:display.none)
+plot(hist,"Histogram",style=plot.style_columns,color=hist>=0?color.green:color.red,display=showMACD?display.all:display.none)
