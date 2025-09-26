@@ -1,174 +1,152 @@
 //@version=6
-indicator("MACD Divergence Breakout", shorttitle="MACDDiverg", overlay=true)
+indicator("Smart Trendline Breakout", shorttitle="TrendBreak", overlay=true)
 
-// === INPUTS ===
-leftBars = input.int(5, "Left Bars for Pivot", minval=1)
-rightBars = input.int(5, "Right Bars for Pivot", minval=1)
-fastLength = input.int(12, "MACD Fast")
-slowLength = input.int(26, "MACD Slow") 
-sigLength = input.int(9, "MACD Signal")
-riskRewardRatio = input.float(1.5, "Risk Reward Ratio", minval=1.0, step=0.1)
-bullishColor = input.color(color.green, "Bullish Color")
-bearishColor = input.color(color.red, "Bearish Color")
+pivotBars = input.int(5, "Pivot Bars", minval=3)
+profitTarget = input.float(10.0, "Profit Target %", minval=1.0, step=0.5) / 100
 
-// === MACD CALCULATION ===
-[macdLine, signalLine, histogram] = ta.macd(close, fastLength, slowLength, sigLength)
+lowest5 = ta.lowest(low, 5)
+highest5 = ta.highest(high, 5)
 
-// === PIVOT DETECTION ===
-priceHighPivot = ta.pivothigh(high, leftBars, rightBars)
-priceLowPivot = ta.pivotlow(low, leftBars, rightBars)
-macdHighPivot = ta.pivothigh(histogram, leftBars, rightBars)
-macdLowPivot = ta.pivotlow(histogram, leftBars, rightBars)
+swingHigh = ta.pivothigh(high, pivotBars, pivotBars)
+swingLow = ta.pivotlow(low, pivotBars, pivotBars)
 
-// === STORAGE VARIABLES ===
-var line priceBullishLine = na
-var line priceBearishLine = na
-var line macdBullishLine = na
-var line macdBearishLine = na
-var label buyLabel = na
-var label sellLabel = na
-var line stopLine = na
-var label stopLabel = na
-var line targetLine = na
-var label targetLabel = na
+var int upTrendTime1 = na
+var float upTrendPrice1 = na
+var int upTrendTime2 = na
+var float upTrendPrice2 = na
+var int downTrendTime1 = na
+var float downTrendPrice1 = na
+var int downTrendTime2 = na
+var float downTrendPrice2 = na
 
-var float lastBullishPrice = na
-var int lastBullishPriceBar = na
-var float lastBullishMacd = na
-var int lastBullishMacdBar = na
-var float lastBearishPrice = na
-var int lastBearishPriceBar = na
-var float lastBearishMacd = na
-var int lastBearishMacdBar = na
+if not na(swingLow)
+    currentLow = low[pivotBars]
+    currentTime = time[pivotBars]
+    if na(upTrendTime1)
+        upTrendTime1 := currentTime
+        upTrendPrice1 := currentLow
+    else if na(upTrendTime2)
+        upTrendTime2 := currentTime
+        upTrendPrice2 := currentLow
+    else if currentLow > upTrendPrice2
+        upTrendTime1 := upTrendTime2
+        upTrendPrice1 := upTrendPrice2
+        upTrendTime2 := currentTime
+        upTrendPrice2 := currentLow
 
-// === DIVERGENCE DETECTION ===
-// Bullish Divergence (Price: Lower Low, MACD: Higher Low)
-if not na(priceLowPivot) and not na(macdLowPivot)
-    currentPriceLow = low[rightBars]
-    currentMacdLow = histogram[rightBars]
-    currentBar = bar_index - rightBars
-    
-    if not na(lastBullishPrice) and not na(lastBullishMacd)
-        if currentPriceLow < lastBullishPrice and currentMacdLow > lastBullishMacd
-            if not na(priceBullishLine)
-                line.delete(priceBullishLine)
-            priceBullishLine := line.new(x1=lastBullishPriceBar, y1=lastBullishPrice, x2=currentBar, y2=currentPriceLow, color=bullishColor, style=line.style_dotted, width=2)
-            
-            if not na(macdBullishLine)
-                line.delete(macdBullishLine)
-            macdBullishLine := line.new(x1=lastBullishMacdBar, y1=lastBullishMacd, x2=currentBar, y2=currentMacdLow, color=bullishColor, style=line.style_dotted, width=1)
-    
-    lastBullishPrice := currentPriceLow
-    lastBullishPriceBar := currentBar
-    lastBullishMacd := currentMacdLow
-    lastBullishMacdBar := currentBar
+if not na(swingHigh)
+    currentHigh = high[pivotBars]
+    currentTime = time[pivotBars]
+    if na(downTrendTime1)
+        downTrendTime1 := currentTime
+        downTrendPrice1 := currentHigh
+    else if na(downTrendTime2)
+        downTrendTime2 := currentTime
+        downTrendPrice2 := currentHigh
+    else if currentHigh < downTrendPrice2
+        downTrendTime1 := downTrendTime2
+        downTrendPrice1 := downTrendPrice2
+        downTrendTime2 := currentTime
+        downTrendPrice2 := currentHigh
 
-// Bearish Divergence (Price: Higher High, MACD: Lower High)
-if not na(priceHighPivot) and not na(macdHighPivot)
-    currentPriceHigh = high[rightBars]
-    currentMacdHigh = histogram[rightBars]
-    currentBar = bar_index - rightBars
-    
-    if not na(lastBearishPrice) and not na(lastBearishMacd)
-        if currentPriceHigh > lastBearishPrice and currentMacdHigh < lastBearishMacd
-            if not na(priceBearishLine)
-                line.delete(priceBearishLine)
-            priceBearishLine := line.new(x1=lastBearishPriceBar, y1=lastBearishPrice, x2=currentBar, y2=currentPriceHigh, color=bearishColor, style=line.style_dotted, width=2)
-            
-            if not na(macdBearishLine)
-                line.delete(macdBearishLine)
-            macdBearishLine := line.new(x1=lastBearishMacdBar, y1=lastBearishMacd, x2=currentBar, y2=currentMacdHigh, color=bearishColor, style=line.style_dotted, width=1)
-    
-    lastBearishPrice := currentPriceHigh
-    lastBearishPriceBar := currentBar
-    lastBearishMacd := currentMacdHigh
-    lastBearishMacdBar := currentBar
+var line upTrendLine = na
+var line downTrendLine = na
 
-// === BREAKOUT SIGNALS ===
+if not na(upTrendTime1) and not na(upTrendTime2)
+    if not na(upTrendLine)
+        line.delete(upTrendLine)
+    upTrendLine := line.new(upTrendTime1, upTrendPrice1, upTrendTime2, upTrendPrice2, color=color.blue, style=line.style_solid, width=2)
+
+if not na(downTrendTime1) and not na(downTrendTime2)
+    if not na(downTrendLine)
+        line.delete(downTrendLine)
+    downTrendLine := line.new(downTrendTime1, downTrendPrice1, downTrendTime2, downTrendPrice2, color=color.orange, style=line.style_solid, width=2)
+
 bullishBreakout = false
 bearishBreakout = false
 
-if not na(priceBullishLine)
-    trendlinePrice = line.get_price(priceBullishLine, bar_index)
-    bullishBreakout := not na(trendlinePrice) and close > trendlinePrice
+if not na(downTrendLine)
+    resistancePrice = line.get_price(downTrendLine, time)
+    bullishBreakout := not na(resistancePrice) and close > resistancePrice
 
-if not na(priceBearishLine)
-    trendlinePrice = line.get_price(priceBearishLine, bar_index)
-    bearishBreakout := not na(trendlinePrice) and close < trendlinePrice
+if not na(upTrendLine)
+    supportPrice = line.get_price(upTrendLine, time)
+    bearishBreakout := not na(supportPrice) and close < supportPrice
 
-// === TRADE MANAGEMENT ===
+var label buySignal = na
+var label sellSignal = na
+var line buyStopLine = na
+var line buyTargetLine = na
+var line sellStopLine = na
+var line sellTargetLine = na
+
 if bullishBreakout
-    if not na(buyLabel)
-        label.delete(buyLabel)
-    if not na(stopLabel)
-        label.delete(stopLabel)
-    if not na(targetLabel)
-        label.delete(targetLabel)
-    if not na(stopLine)
-        line.delete(stopLine)
-    if not na(targetLine)
-        line.delete(targetLine)
+    if not na(buySignal)
+        label.delete(buySignal)
+    if not na(buyStopLine)
+        line.delete(buyStopLine)
+    if not na(buyTargetLine)
+        line.delete(buyTargetLine)
     
-    stopPrice = math.min(low, low[1])
     entryPrice = close
-    risk = entryPrice - stopPrice
-    targetPrice = entryPrice + (risk * riskRewardRatio)
+    stopLoss = lowest5
+    targetPrice = entryPrice * (1 + profitTarget)
     
-    buyLabel := label.new(bar_index, low, text="🟢 BUY\nEntry: " + str.tostring(entryPrice, "#.##") + "\nStop: " + str.tostring(stopPrice, "#.##") + "\nTarget: " + str.tostring(targetPrice, "#.##"), color=color.green, textcolor=color.white, style=label.style_label_up, size=size.normal)
-    
-    stopLine := line.new(bar_index, stopPrice, bar_index + 50, stopPrice, color=color.red, style=line.style_dashed, width=2)
-    stopLabel := label.new(bar_index + 25, stopPrice, text="⛔ STOP", color=color.red, textcolor=color.white, style=label.style_label_right)
-    
-    targetLine := line.new(bar_index, targetPrice, bar_index + 50, targetPrice, color=color.blue, style=line.style_dashed, width=2)
-    targetLabel := label.new(bar_index + 25, targetPrice, text="🎯 TARGET", color=color.blue, textcolor=color.white, style=label.style_label_right)
-    
-    line.delete(priceBullishLine)
-    line.delete(macdBullishLine)
-    priceBullishLine := na
-    macdBullishLine := na
+    buySignal := label.new(bar_index, low, text="BUY", color=color.lime, textcolor=color.black, style=label.style_label_up, size=size.normal)
+    buyStopLine := line.new(bar_index, stopLoss, bar_index + 10, stopLoss, color=color.red, style=line.style_dashed, width=2)
+    buyTargetLine := line.new(bar_index, targetPrice, bar_index + 10, targetPrice, color=color.green, style=line.style_dashed, width=2)
 
 if bearishBreakout
-    if not na(sellLabel)
-        label.delete(sellLabel)
-    if not na(stopLabel)
-        label.delete(stopLabel)
-    if not na(targetLabel)
-        label.delete(targetLabel)
-    if not na(stopLine)
-        line.delete(stopLine)
-    if not na(targetLine)
-        line.delete(targetLine)
+    if not na(sellSignal)
+        label.delete(sellSignal)
+    if not na(sellStopLine)
+        line.delete(sellStopLine)
+    if not na(sellTargetLine)
+        line.delete(sellTargetLine)
     
-    stopPrice = math.max(high, high[1])
     entryPrice = close
-    risk = stopPrice - entryPrice
-    targetPrice = entryPrice - (risk * riskRewardRatio)
+    stopLoss = highest5
+    targetPrice = entryPrice * (1 - profitTarget)
     
-    sellLabel := label.new(bar_index, high, text="🔴 SELL\nEntry: " + str.tostring(entryPrice, "#.##") + "\nStop: " + str.tostring(stopPrice, "#.##") + "\nTarget: " + str.tostring(targetPrice, "#.##"), color=color.red, textcolor=color.white, style=label.style_label_down, size=size.normal)
-    
-    stopLine := line.new(bar_index, stopPrice, bar_index + 50, stopPrice, color=color.red, style=line.style_dashed, width=2)
-    stopLabel := label.new(bar_index + 25, stopPrice, text="⛔ STOP", color=color.red, textcolor=color.white, style=label.style_label_left)
-    
-    targetLine := line.new(bar_index, targetPrice, bar_index + 50, targetPrice, color=color.blue, style=line.style_dashed, width=2)
-    targetLabel := label.new(bar_index + 25, targetPrice, text="🎯 TARGET", color=color.blue, textcolor=color.white, style=label.style_label_left)
-    
-    line.delete(priceBearishLine)
-    line.delete(macdBearishLine)
-    priceBearishLine := na
-    macdBearishLine := na
+    sellSignal := label.new(bar_index, high, text="SELL", color=color.red, textcolor=color.white, style=label.style_label_down, size=size.normal)
+    sellStopLine := line.new(bar_index, stopLoss, bar_index + 10, stopLoss, color=color.red, style=line.style_dashed, width=2)
+    sellTargetLine := line.new(bar_index, targetPrice, bar_index + 10, targetPrice, color=color.green, style=line.style_dashed, width=2)
 
-// === MACD DISPLAY ===
-plot(histogram, "MACD Histogram", color=histogram >= 0 ? color.green : color.red, style=plot.style_columns, display=display.pane)
-plot(macdLine, "MACD Line", color=color.blue, display=display.pane)
-plot(signalLine, "Signal Line", color=color.orange, display=display.pane)
-hline(0, "Zero Line", color=color.gray)
+var line driveLine = na
+if barstate.islast
+    if not na(driveLine)
+        line.delete(driveLine)
+    currentTrend = close > open ? "UP" : "DOWN"
+    driveColor = currentTrend == "UP" ? color.teal : color.purple
+    projectionPrice = currentTrend == "UP" ? close * 1.02 : close * 0.98
+    driveLine := line.new(bar_index, close, bar_index + 5, projectionPrice, color=driveColor, style=line.style_dotted, width=1)
 
-// === ALERTS ===
+if not na(buyStopLine) and bar_index - line.get_x1(buyStopLine) > 20
+    line.delete(buyStopLine)
+    buyStopLine := na
+if not na(buyTargetLine) and bar_index - line.get_x1(buyTargetLine) > 20
+    line.delete(buyTargetLine)
+    buyTargetLine := na
+if not na(sellStopLine) and bar_index - line.get_x1(sellStopLine) > 20
+    line.delete(sellStopLine)
+    sellStopLine := na
+if not na(sellTargetLine) and bar_index - line.get_x1(sellTargetLine) > 20
+    line.delete(sellTargetLine)
+    sellTargetLine := na
+
+bgcolor(bullishBreakout ? color.new(color.lime, 90) : bearishBreakout ? color.new(color.red, 90) : na)
+
+plotshape(bullishBreakout, style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.normal)
+plotshape(bearishBreakout, style=shape.triangledown, location=location.abovebar, color=color.red, size=size.normal)
+
 alertcondition(bullishBreakout, title="Bullish Breakout")
 alertcondition(bearishBreakout, title="Bearish Breakout")
 
 if bullishBreakout
-    alert("BUY Signal - " + syminfo.ticker, alert.freq_once_per_bar)
+    alert("BUY BREAKOUT - Price: " + str.tostring(close), alert.freq_once_per_bar)
 
 if bearishBreakout
-    alert("SELL Signal - " + syminfo.ticker, alert.freq_once_per_bar)
+    alert("SELL BREAKOUT - Price: " + str.tostring(close), alert.freq_once_per_bar)
+
+if barstate.islast
+    label.new(bar_index, high * 1.01, text="TRENDLINE BREAKOUT", color=color.new(color.blue, 90), textcolor=color.white, style=label.style_label_center, size=size.small)
