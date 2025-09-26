@@ -1,83 +1,104 @@
-//@version=5
-indicator("Divergence Breakout Pro – Clean Signals", overlay=true, max_lines_count=200, max_labels_count=200)
+//@version=6
+indicator("Trendline Breakout + Buy/Stop Pro", overlay=true, max_lines_count=50, max_labels_count=50)
 
-// Inputs
-osc_type = input.string("MACD","Oscillator",options=["MACD","RSI"])
-pivotL   = input.int(5,"Pivot Left Bars",minval=1)
-pivotR   = input.int(5,"Pivot Right Bars",minval=1)
-stopPct  = input.float(0.5,"Stop offset %",minval=0.0)
+// 🔧 Inputs
+lookbackBars     = input.int(200, "Lookback Bars", minval=50)
+swingLeft        = input.int(3, "Swing Left", minval=1)
+swingRight       = input.int(3, "Swing Right", minval=1)
+minBetweenSwings = input.int(3, "Minimum bars between swings", minval=1)
 
-// Oscillator
-fastLen=12, slowLen=26, sigLen=9
-macd=ta.ema(close,fastLen)-ta.ema(close,slowLen)
-macd_sig=ta.ema(macd,sigLen)
-macd_hist=macd-macd_sig
-rsi=ta.rsi(close,14)
-osc=osc_type=="MACD"?macd_hist:rsi
+breakoutBufPct   = input.float(0.0, "Breakout Buffer (%)", step=0.1)
+breakBodyReq     = input.bool(true, "Require Bullish Candle Body")
 
-// Pivots
-pHigh=ta.pivothigh(high,pivotL,pivotR)
-pLow=ta.pivotlow(low,pivotL,pivotR)
-oHigh=ta.pivothigh(osc,pivotL,pivotR)
-oLow=ta.pivotlow(osc,pivotL,pivotR)
+stopLookbackBars = input.int(20, "Stop Lookback Bars", minval=5)
+stopOffsetPct    = input.float(0.0, "Stop Offset %", step=0.1)
 
-// Store divergence lines
-var line bullLine=na
-var line bearLine=na
+showTrendline    = input.bool(true, "Show Trendline")
+showBuyLabel     = input.bool(true, "Show Buy Label")
+showStopLine     = input.bool(true, "Show Stop Loss")
 
-// Divergence detection
-bullDiv=not na(pLow) and not na(oLow) and low[pivotR]<low[pivotR+pivotL+pivotR] and osc[pivotR]>osc[pivotR+pivotL+pivotR]
-if bullDiv
-    if not na(bullLine)
-        line.delete(bullLine)
-    bullLine:=line.new(int(bar_index-pivotR*2-pivotL),low[pivotR+pivotL+pivotR], int(bar_index-pivotR),low[pivotR],extend=extend.right,color=color.green,style=line.style_dotted,width=2)
-    label.new(int(bar_index-pivotR),low[pivotR],"Bull Div 🟢",style=label.style_label_up,color=color.green,textcolor=color.white)
+colTrendline     = input.color(color.new(color.blue,0), "Trendline Color")
+colBuyLabel      = input.color(color.green, "Buy Label Color")
+colStopLine      = input.color(color.red, "Stop Line Color")
 
-bearDiv=not na(pHigh) and not na(oHigh) and high[pivotR]>high[pivotR+pivotL+pivotR] and osc[pivotR]<osc[pivotR+pivotL+pivotR]
-if bearDiv
-    if not na(bearLine)
-        line.delete(bearLine)
-    bearLine:=line.new(int(bar_index-pivotR*2-pivotL),high[pivotR+pivotL+pivotR], int(bar_index-pivotR),high[pivotR],extend=extend.right,color=color.red,style=line.style_dotted,width=2)
-    label.new(int(bar_index-pivotR),high[pivotR],"Bear Div 🔴",style=label.style_label_down,color=color.red,textcolor=color.white)
+// 📊 Swing Detection
+swingHighCond = ta.pivothigh(high, swingLeft, swingRight)
+swingLowCond  = ta.pivotlow(low, swingLeft, swingRight)
 
-// Get dynamic line prices
-bullLineY=na(bullLine)?na:line.get_price(bullLine, bar_index)
-bearLineY=na(bearLine)?na:line.get_price(bearLine, bar_index)
+var swingHighBars = array.new_int()
+var swingHighVals = array.new_float()
+if not na(swingHighCond)
+    array.push(swingHighBars, bar_index - swingRight)
+    array.push(swingHighVals, high[swingRight])
+    if array.size(swingHighBars) > 20
+        array.shift(swingHighBars), array.shift(swingHighVals)
 
-// Entry signals = trigger only once
-bullCond = not na(bullLineY) and close>bullLineY
-bearCond = not na(bearLineY) and close<bearLineY
-bullEntry = ta.change(bullCond) and bullCond
-bearEntry = ta.change(bearCond) and bearCond
+var swingLowBars = array.new_int()
+var swingLowVals = array.new_float()
+if not na(swingLowCond)
+    array.push(swingLowBars, bar_index - swingRight)
+    array.push(swingLowVals, low[swingRight])
+    if array.size(swingLowBars) > 20
+        array.shift(swingLowBars), array.shift(swingLowVals)
 
-// Store active stop line, to prevent repeating
-var line stopLine = na
-var label stopLabel = na
+// 📈 Trendline Logic
+var line   trendline = na.line
+var int    lastBar1  = na.int
+var int    lastBar2  = na.int
+var float  lastY1    = na.float
+var float  lastY2    = na.float
 
-if bullEntry
-    // Entry
-    label.new(bar_index,close,"🟢 BUY ENTRY",style=label.style_label_up,color=color.green,textcolor=color.white,size=size.large)
-    // Stop once, clear previous
-    if not na(stopLine)
-        line.delete(stopLine)
-        label.delete(stopLabel)
-    stopLvl=low[pivotR]*(1-stopPct/100)
-    stopLine:=line.new(bar_index,stopLvl,bar_index+20,stopLvl,extend=extend.right,style=line.style_dashed,color=color.red,width=2)
-    stopLabel:=label.new(bar_index,stopLvl,"⛔ STOP LOSS",style=label.style_label_down,color=color.red,textcolor=color.white)
-    alert("🟢 BUY " + str.tostring(close,format.mintick)+" | Stop: "+str.tostring(stopLvl,format.mintick),alert.freq_once_per_bar_close)
+if array.size(swingHighBars) >= 2
+    b2 = array.get(swingHighBars, array.size(swingHighBars)-1)
+    b1 = array.get(swingHighBars, array.size(swingHighBars)-2)
+    y2 = array.get(swingHighVals, array.size(swingHighVals)-1)
+    y1 = array.get(swingHighVals, array.size(swingHighVals)-2)
+    if b2 - b1 >= minBetweenSwings and y2 < y1
+        lastBar1 := b1
+        lastBar2 := b2
+        lastY1   := y1
+        lastY2   := y2
+        if na(trendline)
+            trendline := line.new(lastBar1,lastY1,lastBar2,lastY2,xloc=xloc.bar_index,color=colTrendline,style=line.style_dotted,width=2,extend=extend.right)
+        else
+            line.set_xy1(trendline,lastBar1,lastY1)
+            line.set_xy2(trendline,lastBar2,lastY2)
 
-if bearEntry
-    // Entry
-    label.new(bar_index,close,"🔴 SHORT ENTRY",style=label.style_label_down,color=color.red,textcolor=color.white,size=size.large)
-    // Stop once, clear previous
-    if not na(stopLine)
-        line.delete(stopLine)
-        label.delete(stopLabel)
-    stopLvl=high[pivotR]*(1+stopPct/100)
-    stopLine:=line.new(bar_index,stopLvl,bar_index+20,stopLvl,extend=extend.right,style=line.style_dashed,color=color.green,width=2)
-    stopLabel:=label.new(bar_index,stopLvl,"⛔ STOP LOSS",style=label.style_label_up,color=color.green,textcolor=color.white)
-    alert("🔴 SHORT " + str.tostring(close,format.mintick)+" | Stop: "+str.tostring(stopLvl,format.mintick),alert.freq_once_per_bar_close)
+// compute trendline y at current bar
+float tl_y = na.float
+if not na(lastBar1) and not na(lastBar2) and bar_index >= lastBar2
+    slope = (lastY2 - lastY1) / (lastBar2 - lastBar1)
+    tl_y := lastY2 + slope * (bar_index - lastBar2)
 
-// Static alertconditions for client distribution
-alertcondition(bullEntry,"Bullish Breakout + Divergence","🟢 BUY signal triggered (breakout + bullish divergence)")
-alertcondition(bearEntry,"Bearish Breakdown + Divergence","🔴 SHORT signal triggered (breakdown + bearish divergence)")
+// 🚦 Buy Entry
+buySignal  = not na(tl_y) and close > tl_y*(1+breakoutBufPct/100) and (not breakBodyReq or close>open)
+buyTrigger = ta.change(buySignal) and buySignal
+
+// 🎯 Labels and Stop
+var label buyLabel  = na.label
+var line  stopLine  = na.line
+var label stopLabel = na.label
+
+if buyTrigger and showBuyLabel
+    if not na(buyLabel)
+        label.delete(buyLabel)
+        if not na(stopLine)
+            line.delete(stopLine)
+            if not na(stopLabel)
+                label.delete(stopLabel)
+    buyLabel := label.new(bar_index, close, "Buy Entry Point", style=label.style_label_up, textcolor=color.white, color=colBuyLabel, size=size.large)
+
+    // Stop based on recent swing lows
+    stopIdx   = -1
+    stopPrice = na.float
+    for i = array.size(swingLowBars)-1 to 0
+        bi = array.get(swingLowBars,i)
+        if bar_index - bi <= stopLookbackBars
+            stopIdx   := bi
+            stopPrice := array.get(swingLowVals,i)
+            break
+    if stopIdx != -1
+        stopPrice := stopPrice * (1 - stopOffsetPct/100)
+        stopLine  := line.new(bar_index, stopPrice, bar_index+20, stopPrice, xloc=xloc.bar_index, extend=extend.right, style=line.style_dashed, color=colStopLine, width=2)
+        if showStopLine
+            stopLabel := label.new(bar_index, stopPrice, "Stop Loss Here", style=label.style_label_down, textcolor=color.white, color=colStopLine)
