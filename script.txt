@@ -13,11 +13,7 @@ breakBodyReq     = input.bool(true, "Require Bullish Candle Body")
 stopLookbackBars = input.int(20, "Stop Lookback Bars", minval=5)
 stopOffsetPct    = input.float(0.0, "Stop Offset %", step=0.1)
 
-showTrendline    = input.bool(true, "Show Trendline")
-showBuyLabel     = input.bool(true, "Show Buy Label")
-showStopLine     = input.bool(true, "Show Stop Loss")
-
-colTrendline     = input.color(color.new(color.blue,0), "Trendline Color")
+colTrendline     = input.color(color.blue, "Trendline Color")
 colBuyLabel      = input.color(color.green, "Buy Label Color")
 colStopLine      = input.color(color.red, "Stop Line Color")
 
@@ -42,11 +38,11 @@ if not na(swingLowCond)
         array.shift(swingLowBars), array.shift(swingLowVals)
 
 // 📈 Trendline Logic
-var line   trendline = na.line
-var int    lastBar1  = na.int
-var int    lastBar2  = na.int
-var float  lastY1    = na.float
-var float  lastY2    = na.float
+var line trendline   = na
+var int lastBar1     = na
+var int lastBar2     = na
+var float lastY1     = na
+var float lastY2     = na
 
 if array.size(swingHighBars) >= 2
     b2 = array.get(swingHighBars, array.size(swingHighBars)-1)
@@ -65,7 +61,7 @@ if array.size(swingHighBars) >= 2
             line.set_xy2(trendline,lastBar2,lastY2)
 
 // compute trendline y at current bar
-float tl_y = na.float
+float tl_y = na
 if not na(lastBar1) and not na(lastBar2) and bar_index >= lastBar2
     slope = (lastY2 - lastY1) / (lastBar2 - lastBar1)
     tl_y := lastY2 + slope * (bar_index - lastBar2)
@@ -75,30 +71,28 @@ buySignal  = not na(tl_y) and close > tl_y*(1+breakoutBufPct/100) and (not break
 buyTrigger = ta.change(buySignal) and buySignal
 
 // 🎯 Labels and Stop
-var label buyLabel  = na.label
-var line  stopLine  = na.line
-var label stopLabel = na.label
+var label buyLabel  = na
+var line stopLine   = na
+var label stopLabel = na
 
-if buyTrigger and showBuyLabel
+if buyTrigger
     if not na(buyLabel)
         label.delete(buyLabel)
-        if not na(stopLine)
-            line.delete(stopLine)
-            if not na(stopLabel)
-                label.delete(stopLabel)
+    if not na(stopLine)
+        line.delete(stopLine)
+    if not na(stopLabel)
+        label.delete(stopLabel)
+
     buyLabel := label.new(bar_index, close, "Buy Entry Point", style=label.style_label_up, textcolor=color.white, color=colBuyLabel, size=size.large)
 
-    // Stop based on recent swing lows
-    stopIdx   = -1
-    stopPrice = na.float
+    // Stop loss: most recent swing low
+    float stopPrice = na   // <-- declare here per trigger, no conflict
     for i = array.size(swingLowBars)-1 to 0
         bi = array.get(swingLowBars,i)
         if bar_index - bi <= stopLookbackBars
-            stopIdx   := bi
             stopPrice := array.get(swingLowVals,i)
             break
-    if stopIdx != -1
+    if not na(stopPrice)
         stopPrice := stopPrice * (1 - stopOffsetPct/100)
         stopLine  := line.new(bar_index, stopPrice, bar_index+20, stopPrice, xloc=xloc.bar_index, extend=extend.right, style=line.style_dashed, color=colStopLine, width=2)
-        if showStopLine
-            stopLabel := label.new(bar_index, stopPrice, "Stop Loss Here", style=label.style_label_down, textcolor=color.white, color=colStopLine)
+        stopLabel := label.new(bar_index, stopPrice, "Stop Loss Here", style=label.style_label_down, textcolor=color.white, color=colStopLine)
