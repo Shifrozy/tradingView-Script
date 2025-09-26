@@ -1,98 +1,174 @@
 //@version=6
-indicator("MACD Divergence Trendline Breakout", overlay=true, max_lines_count=50, max_labels_count=50)
+indicator("MACD Divergence Breakout", shorttitle="MACDDiverg", overlay=true)
 
-// 🔧 Inputs
-leftBars   = input.int(5,"Pivot Left",minval=1)
-rightBars  = input.int(5,"Pivot Right",minval=1)
-stopLookback = input.int(20,"Stop Lookback Bars",minval=5)
-stopOffset   = input.float(0.0,"Stop Offset %",step=0.1)
+// === INPUTS ===
+leftBars = input.int(5, "Left Bars for Pivot", minval=1)
+rightBars = input.int(5, "Right Bars for Pivot", minval=1)
+fastLength = input.int(12, "MACD Fast")
+slowLength = input.int(26, "MACD Slow") 
+sigLength = input.int(9, "MACD Signal")
+riskRewardRatio = input.float(1.5, "Risk Reward Ratio", minval=1.0, step=0.1)
+bullishColor = input.color(color.green, "Bullish Color")
+bearishColor = input.color(color.red, "Bearish Color")
 
-// 🎨 Colors
-colBull   = input.color(color.green,"Bullish Line")
-colBear   = input.color(color.red,"Bearish Line")
+// === MACD CALCULATION ===
+[macdLine, signalLine, histogram] = ta.macd(close, fastLength, slowLength, sigLength)
 
-// 📊 MACD
-fastLen = input.int(12,"MACD Fast Length")
-slowLen = input.int(26,"MACD Slow Length")
-sigLen  = input.int(9,"MACD Signal Length")
+// === PIVOT DETECTION ===
+priceHighPivot = ta.pivothigh(high, leftBars, rightBars)
+priceLowPivot = ta.pivotlow(low, leftBars, rightBars)
+macdHighPivot = ta.pivothigh(histogram, leftBars, rightBars)
+macdLowPivot = ta.pivotlow(histogram, leftBars, rightBars)
 
-macdLine   = ta.ema(close,fastLen) - ta.ema(close,slowLen)
-macdSignal = ta.ema(macdLine,sigLen)
-macdHist   = macdLine - macdSignal
+// === STORAGE VARIABLES ===
+var line priceBullishLine = na
+var line priceBearishLine = na
+var line macdBullishLine = na
+var line macdBearishLine = na
+var label buyLabel = na
+var label sellLabel = na
+var line stopLine = na
+var label stopLabel = na
+var line targetLine = na
+var label targetLabel = na
 
-// ────────────────
-// 🔍 Find Pivots
-// ────────────────
-pHigh = ta.pivothigh(high,leftBars,rightBars)
-pLow  = ta.pivotlow(low,leftBars,rightBars)
-mHigh = ta.pivothigh(macdHist,leftBars,rightBars)
-mLow  = ta.pivotlow(macdHist,leftBars,rightBars)
+var float lastBullishPrice = na
+var int lastBullishPriceBar = na
+var float lastBullishMacd = na
+var int lastBullishMacdBar = na
+var float lastBearishPrice = na
+var int lastBearishPriceBar = na
+var float lastBearishMacd = na
+var int lastBearishMacdBar = na
 
-// ────────────────
-// 📈 Detect Divergence (keep latest only)
-// ────────────────
-var line bullLine = na
-var line bearLine = na
+// === DIVERGENCE DETECTION ===
+// Bullish Divergence (Price: Lower Low, MACD: Higher Low)
+if not na(priceLowPivot) and not na(macdLowPivot)
+    currentPriceLow = low[rightBars]
+    currentMacdLow = histogram[rightBars]
+    currentBar = bar_index - rightBars
+    
+    if not na(lastBullishPrice) and not na(lastBullishMacd)
+        if currentPriceLow < lastBullishPrice and currentMacdLow > lastBullishMacd
+            if not na(priceBullishLine)
+                line.delete(priceBullishLine)
+            priceBullishLine := line.new(x1=lastBullishPriceBar, y1=lastBullishPrice, x2=currentBar, y2=currentPriceLow, color=bullishColor, style=line.style_dotted, width=2)
+            
+            if not na(macdBullishLine)
+                line.delete(macdBullishLine)
+            macdBullishLine := line.new(x1=lastBullishMacdBar, y1=lastBullishMacd, x2=currentBar, y2=currentMacdLow, color=bullishColor, style=line.style_dotted, width=1)
+    
+    lastBullishPrice := currentPriceLow
+    lastBullishPriceBar := currentBar
+    lastBullishMacd := currentMacdLow
+    lastBullishMacdBar := currentBar
 
-// Bullish divergence
-if not na(pLow) and not na(mLow)
-    if low[rightBars] < low[rightBars+leftBars+rightBars] and macdHist[rightBars] > macdHist[rightBars+leftBars+rightBars]
-        if not na(bullLine)
-            line.delete(bullLine)
-        bullLine := line.new(bar_index-(rightBars*2+leftBars), low[rightBars+leftBars+rightBars],
-                             bar_index-rightBars, low[rightBars],
-                             xloc=xloc.bar_index, extend=extend.right,
-                             color=colBull, style=line.style_dotted, width=2)
+// Bearish Divergence (Price: Higher High, MACD: Lower High)
+if not na(priceHighPivot) and not na(macdHighPivot)
+    currentPriceHigh = high[rightBars]
+    currentMacdHigh = histogram[rightBars]
+    currentBar = bar_index - rightBars
+    
+    if not na(lastBearishPrice) and not na(lastBearishMacd)
+        if currentPriceHigh > lastBearishPrice and currentMacdHigh < lastBearishMacd
+            if not na(priceBearishLine)
+                line.delete(priceBearishLine)
+            priceBearishLine := line.new(x1=lastBearishPriceBar, y1=lastBearishPrice, x2=currentBar, y2=currentPriceHigh, color=bearishColor, style=line.style_dotted, width=2)
+            
+            if not na(macdBearishLine)
+                line.delete(macdBearishLine)
+            macdBearishLine := line.new(x1=lastBearishMacdBar, y1=lastBearishMacd, x2=currentBar, y2=currentMacdHigh, color=bearishColor, style=line.style_dotted, width=1)
+    
+    lastBearishPrice := currentPriceHigh
+    lastBearishPriceBar := currentBar
+    lastBearishMacd := currentMacdHigh
+    lastBearishMacdBar := currentBar
 
-// Bearish divergence
-if not na(pHigh) and not na(mHigh)
-    if high[rightBars] > high[rightBars+leftBars+rightBars] and macdHist[rightBars] < macdHist[rightBars+leftBars+rightBars]
-        if not na(bearLine)
-            line.delete(bearLine)
-        bearLine := line.new(bar_index-(rightBars*2+leftBars), high[rightBars+leftBars+rightBars],
-                             bar_index-rightBars, high[rightBars],
-                             xloc=xloc.bar_index, extend=extend.right,
-                             color=colBear, style=line.style_dotted, width=2)
+// === BREAKOUT SIGNALS ===
+bullishBreakout = false
+bearishBreakout = false
 
-// ────────────────
-// 🚦 Entry Logic
-// ────────────────
-bullLineY = na(bullLine) ? na : line.get_price(bullLine, bar_index)
-bearLineY = na(bearLine) ? na : line.get_price(bearLine, bar_index)
+if not na(priceBullishLine)
+    trendlinePrice = line.get_price(priceBullishLine, bar_index)
+    bullishBreakout := not na(trendlinePrice) and close > trendlinePrice
 
-bullEntry = not na(bullLineY) and close > bullLineY
-bearEntry = not na(bearLineY) and close < bearLineY
+if not na(priceBearishLine)
+    trendlinePrice = line.get_price(priceBearishLine, bar_index)
+    bearishBreakout := not na(trendlinePrice) and close < trendlinePrice
 
-// Always compute stops for stability
-lowestStop  = ta.lowest(low, stopLookback)
-highestStop = ta.highest(high, stopLookback)
+// === TRADE MANAGEMENT ===
+if bullishBreakout
+    if not na(buyLabel)
+        label.delete(buyLabel)
+    if not na(stopLabel)
+        label.delete(stopLabel)
+    if not na(targetLabel)
+        label.delete(targetLabel)
+    if not na(stopLine)
+        line.delete(stopLine)
+    if not na(targetLine)
+        line.delete(targetLine)
+    
+    stopPrice = math.min(low, low[1])
+    entryPrice = close
+    risk = entryPrice - stopPrice
+    targetPrice = entryPrice + (risk * riskRewardRatio)
+    
+    buyLabel := label.new(bar_index, low, text="🟢 BUY\nEntry: " + str.tostring(entryPrice, "#.##") + "\nStop: " + str.tostring(stopPrice, "#.##") + "\nTarget: " + str.tostring(targetPrice, "#.##"), color=color.green, textcolor=color.white, style=label.style_label_up, size=size.normal)
+    
+    stopLine := line.new(bar_index, stopPrice, bar_index + 50, stopPrice, color=color.red, style=line.style_dashed, width=2)
+    stopLabel := label.new(bar_index + 25, stopPrice, text="⛔ STOP", color=color.red, textcolor=color.white, style=label.style_label_right)
+    
+    targetLine := line.new(bar_index, targetPrice, bar_index + 50, targetPrice, color=color.blue, style=line.style_dashed, width=2)
+    targetLabel := label.new(bar_index + 25, targetPrice, text="🎯 TARGET", color=color.blue, textcolor=color.white, style=label.style_label_right)
+    
+    line.delete(priceBullishLine)
+    line.delete(macdBullishLine)
+    priceBullishLine := na
+    macdBullishLine := na
 
-// 🟢 BUY signal
-if ta.change(bullEntry) and bullEntry
-    label.new(bar_index, close, "🟢 BUY", style=label.style_label_up, size=size.large,
-              color=colBull, textcolor=color.white)
-    stopPrice = lowestStop*(1-stopOffset/100)
-    line.new(bar_index, stopPrice, bar_index+20, stopPrice,
-             xloc=xloc.bar_index, extend=extend.right,
-             style=line.style_dashed, color=colBear, width=2)
-    label.new(bar_index+1, stopPrice, "⛔ STOP", style=label.style_label_left,
-              color=colBear, textcolor=color.white)
+if bearishBreakout
+    if not na(sellLabel)
+        label.delete(sellLabel)
+    if not na(stopLabel)
+        label.delete(stopLabel)
+    if not na(targetLabel)
+        label.delete(targetLabel)
+    if not na(stopLine)
+        line.delete(stopLine)
+    if not na(targetLine)
+        line.delete(targetLine)
+    
+    stopPrice = math.max(high, high[1])
+    entryPrice = close
+    risk = stopPrice - entryPrice
+    targetPrice = entryPrice - (risk * riskRewardRatio)
+    
+    sellLabel := label.new(bar_index, high, text="🔴 SELL\nEntry: " + str.tostring(entryPrice, "#.##") + "\nStop: " + str.tostring(stopPrice, "#.##") + "\nTarget: " + str.tostring(targetPrice, "#.##"), color=color.red, textcolor=color.white, style=label.style_label_down, size=size.normal)
+    
+    stopLine := line.new(bar_index, stopPrice, bar_index + 50, stopPrice, color=color.red, style=line.style_dashed, width=2)
+    stopLabel := label.new(bar_index + 25, stopPrice, text="⛔ STOP", color=color.red, textcolor=color.white, style=label.style_label_left)
+    
+    targetLine := line.new(bar_index, targetPrice, bar_index + 50, targetPrice, color=color.blue, style=line.style_dashed, width=2)
+    targetLabel := label.new(bar_index + 25, targetPrice, text="🎯 TARGET", color=color.blue, textcolor=color.white, style=label.style_label_left)
+    
+    line.delete(priceBearishLine)
+    line.delete(macdBearishLine)
+    priceBearishLine := na
+    macdBearishLine := na
 
-// 🔴 SELL signal
-if ta.change(bearEntry) and bearEntry
-    label.new(bar_index, close, "🔴 SELL", style=label.style_label_down, size=size.large,
-              color=colBear, textcolor=color.white)
-    stopPrice = highestStop*(1+stopOffset/100)
-    line.new(bar_index, stopPrice, bar_index+20, stopPrice,
-             xloc=xloc.bar_index, extend=extend.right,
-             style=line.style_dashed, color=colBull, width=2)
-    label.new(bar_index+1, stopPrice, "⛔ STOP", style=label.style_label_left,
-              color=colBull, textcolor=color.white)
+// === MACD DISPLAY ===
+plot(histogram, "MACD Histogram", color=histogram >= 0 ? color.green : color.red, style=plot.style_columns, display=display.pane)
+plot(macdLine, "MACD Line", color=color.blue, display=display.pane)
+plot(signalLine, "Signal Line", color=color.orange, display=display.pane)
+hline(0, "Zero Line", color=color.gray)
 
-// ────────────────
-// 📉 MACD Panel
-// ────────────────
-plot(macdLine,   "MACD",   color=color.blue)
-plot(macdSignal, "Signal", color=color.orange)
-plot(macdHist,   "Histogram", style=plot.style_columns,
-     color=macdHist>=0?color.green:color.red)
+// === ALERTS ===
+alertcondition(bullishBreakout, title="Bullish Breakout")
+alertcondition(bearishBreakout, title="Bearish Breakout")
+
+if bullishBreakout
+    alert("BUY Signal - " + syminfo.ticker, alert.freq_once_per_bar)
+
+if bearishBreakout
+    alert("SELL Signal - " + syminfo.ticker, alert.freq_once_per_bar)
