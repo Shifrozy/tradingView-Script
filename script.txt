@@ -16,14 +16,14 @@ stopLookback = input.int(5, "Stop Loss Lookback", minval=1, group="Trade Managem
 showTrendlines = input.bool(true, "Show Trendlines", group="Visual Settings")
 showEntrySignals = input.bool(true, "Show Entry Signals", group="Visual Settings")
 showSLTP = input.bool(true, "Show Stop Loss & Take Profit", group="Visual Settings")
-showBackground = input.bool(true, "Highlight Breakout Bars", group="Visual Settings")
+showBackground = input.bool(false, "Highlight Breakout Bars", group="Visual Settings")
 showLabels = input.bool(true, "Show Price Labels", group="Visual Settings")
 
 // Colors
-resistanceColor = input.color(color.orange, "Resistance Line Color", group="Colors")
-supportColor = input.color(color.blue, "Support Line Color", group="Colors")
-buyColor = input.color(color.green, "Buy Signal Color", group="Colors")
-sellColor = input.color(color.red, "Sell Signal Color", group="Colors")
+resistanceColor = input.color(color.gray, "Resistance Line Color", group="Colors")
+supportColor = input.color(color.gray, "Support Line Color", group="Colors")
+buyColor = input.color(color.new(color.green, 0), "Buy Signal Color", group="Colors")
+sellColor = input.color(color.new(color.red, 0), "Sell Signal Color", group="Colors")
 
 // ==================== PIVOT DETECTION ====================
 // Function to detect pivot highs
@@ -93,7 +93,7 @@ buyTakeProfit = close * (1 + profitTargetPercent / 100)
 sellTakeProfit = close * (1 - profitTargetPercent / 100)
 
 // ==================== VISUAL ELEMENTS ====================
-// Draw trendlines
+// Draw trendlines (dotted style)
 var line resistanceLine = na
 var line supportLine = na
 
@@ -103,7 +103,7 @@ if showTrendlines and array.size(resistancePivots) >= 2
     x1 = array.get(resistanceBars, array.size(resistanceBars) - 2)
     y1 = array.get(resistancePivots, array.size(resistancePivots) - 2)
     resistanceLine := line.new(x1, y1, bar_index + 50, resistanceValue + resistanceSlope * 50, 
-         color=resistanceColor, width=2, extend=extend.right)
+         color=resistanceColor, width=1, style=line.style_dotted, extend=extend.right)
 
 if showTrendlines and array.size(supportPivots) >= 2
     if not na(supportLine)
@@ -111,46 +111,104 @@ if showTrendlines and array.size(supportPivots) >= 2
     x1 = array.get(supportBars, array.size(supportBars) - 2)
     y1 = array.get(supportPivots, array.size(supportPivots) - 2)
     supportLine := line.new(x1, y1, bar_index + 50, supportValue + supportSlope * 50, 
-         color=supportColor, width=2, extend=extend.right)
+         color=supportColor, width=1, style=line.style_dotted, extend=extend.right)
 
-// Entry signals
+// Entry signals with professional labels
 if showEntrySignals
     if resistanceBreakout
-        label.new(bar_index, low, "▲", color=buyColor, style=label.style_label_up, 
-             size=size.normal, textcolor=buyColor)
+        // Buy signal with detailed label
+        buyLabel = label.new(bar_index, low * 0.995, 
+             text="BUY SIGNAL\nEntry: " + str.tostring(close, "#,###.##") + 
+             "\nTarget: " + str.tostring(buyTakeProfit, "#,###.##") + 
+             "\nStop: " + str.tostring(buyStopLoss, "#,###.##"),
+             color=buyColor, 
+             style=label.style_label_up, 
+             size=size.normal, 
+             textcolor=color.white,
+             textalign=text.align_center)
+             
     if supportBreakout
-        label.new(bar_index, high, "▼", color=sellColor, style=label.style_label_down, 
-             size=size.normal, textcolor=sellColor)
+        // Sell signal with detailed label
+        sellLabel = label.new(bar_index, high * 1.005, 
+             text="SELL SIGNAL\nEntry: " + str.tostring(close, "#,###.##") + 
+             "\nTarget: " + str.tostring(sellTakeProfit, "#,###.##") + 
+             "\nStop: " + str.tostring(sellStopLoss, "#,###.##"),
+             color=sellColor, 
+             style=label.style_label_down, 
+             size=size.normal, 
+             textcolor=color.white,
+             textalign=text.align_center)
 
-// Stop loss and take profit lines
+// Stop loss and take profit lines with clear labels
 if showSLTP
     if resistanceBreakout
-        line.new(bar_index, buyStopLoss, bar_index + 20, buyStopLoss, 
-             color=color.red, style=line.style_dashed, width=1)
-        line.new(bar_index, buyTakeProfit, bar_index + 20, buyTakeProfit, 
-             color=color.green, style=line.style_dashed, width=1)
+        // Stop loss line
+        slLine = line.new(bar_index, buyStopLoss, bar_index + 30, buyStopLoss, 
+             color=color.new(color.red, 30), style=line.style_dashed, width=2)
+        // Take profit line
+        tpLine = line.new(bar_index, buyTakeProfit, bar_index + 30, buyTakeProfit, 
+             color=color.new(color.green, 30), style=line.style_dashed, width=2)
         
         if showLabels
-            label.new(bar_index + 20, buyStopLoss, "SL: " + str.tostring(buyStopLoss, "#.##"), 
-                 color=color.red, style=label.style_label_left, textcolor=color.white, size=size.small)
-            label.new(bar_index + 20, buyTakeProfit, "TP: " + str.tostring(buyTakeProfit, "#.##"), 
-                 color=color.green, style=label.style_label_left, textcolor=color.white, size=size.small)
+            // Professional stop loss label
+            label.new(bar_index + 30, buyStopLoss, 
+                 text="STOP LOSS\n" + str.tostring(buyStopLoss, "#,###.##"), 
+                 color=color.new(color.red, 20), 
+                 style=label.style_label_left, 
+                 textcolor=color.white, 
+                 size=size.small,
+                 textalign=text.align_center)
+            // Professional take profit label
+            label.new(bar_index + 30, buyTakeProfit, 
+                 text="TAKE PROFIT\n" + str.tostring(buyTakeProfit, "#,###.##") + 
+                 "\n(+" + str.tostring(profitTargetPercent, "#.#") + "%)", 
+                 color=color.new(color.green, 20), 
+                 style=label.style_label_left, 
+                 textcolor=color.white, 
+                 size=size.small,
+                 textalign=text.align_center)
     
     if supportBreakout
-        line.new(bar_index, sellStopLoss, bar_index + 20, sellStopLoss, 
-             color=color.red, style=line.style_dashed, width=1)
-        line.new(bar_index, sellTakeProfit, bar_index + 20, sellTakeProfit, 
-             color=color.green, style=line.style_dashed, width=1)
+        // Stop loss line
+        slLine = line.new(bar_index, sellStopLoss, bar_index + 30, sellStopLoss, 
+             color=color.new(color.red, 30), style=line.style_dashed, width=2)
+        // Take profit line
+        tpLine = line.new(bar_index, sellTakeProfit, bar_index + 30, sellTakeProfit, 
+             color=color.new(color.green, 30), style=line.style_dashed, width=2)
         
         if showLabels
-            label.new(bar_index + 20, sellStopLoss, "SL: " + str.tostring(sellStopLoss, "#.##"), 
-                 color=color.red, style=label.style_label_left, textcolor=color.white, size=size.small)
-            label.new(bar_index + 20, sellTakeProfit, "TP: " + str.tostring(sellTakeProfit, "#.##"), 
-                 color=color.green, style=label.style_label_left, textcolor=color.white, size=size.small)
+            // Professional stop loss label
+            label.new(bar_index + 30, sellStopLoss, 
+                 text="STOP LOSS\n" + str.tostring(sellStopLoss, "#,###.##"), 
+                 color=color.new(color.red, 20), 
+                 style=label.style_label_left, 
+                 textcolor=color.white, 
+                 size=size.small,
+                 textalign=text.align_center)
+            // Professional take profit label
+            label.new(bar_index + 30, sellTakeProfit, 
+                 text="TAKE PROFIT\n" + str.tostring(sellTakeProfit, "#,###.##") + 
+                 "\n(-" + str.tostring(profitTargetPercent, "#.#") + "%)", 
+                 color=color.new(color.green, 20), 
+                 style=label.style_label_left, 
+                 textcolor=color.white, 
+                 size=size.small,
+                 textalign=text.align_center)
 
-// Background highlighting
-bgcolor(showBackground and resistanceBreakout ? color.new(buyColor, 90) : na)
-bgcolor(showBackground and supportBreakout ? color.new(sellColor, 90) : na)
+// Background highlighting (subtle)
+bgcolor(showBackground and resistanceBreakout ? color.new(buyColor, 95) : na)
+bgcolor(showBackground and supportBreakout ? color.new(sellColor, 95) : na)
+
+// ==================== INFORMATION PANEL ====================
+// Display current trendline info in status line
+var table infoTable = table.new(position.top_right, 2, 3, bgcolor=color.new(color.black, 80))
+
+if barstate.islast and showLabels
+    table.cell(infoTable, 0, 0, "TRENDLINE STATUS", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 0, 1, "Resistance:", text_color=color.orange, text_size=size.small)
+    table.cell(infoTable, 1, 1, str.tostring(resistanceValue, "#,###.##"), text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 0, 2, "Support:", text_color=color.blue, text_size=size.small)
+    table.cell(infoTable, 1, 2, str.tostring(supportValue, "#,###.##"), text_color=color.white, text_size=size.small)
 
 // ==================== PLOTS FOR ALERTS ====================
 // Plot values for use in alerts (invisible on chart)
@@ -161,24 +219,24 @@ plot(supportBreakout ? sellTakeProfit : na, title="Sell Take Profit", display=di
 plot(close, title="Entry Price", display=display.none)
 
 // ==================== ALERTS ====================
-// Alert conditions with constant strings
+// Alert conditions with clear messages
 alertcondition(resistanceBreakout, 
-     title="Resistance Breakout (BUY)", 
-     message="RESISTANCE BREAKOUT! BUY signal triggered. Check chart for entry, stop loss, and take profit levels.")
+     title="🟢 BUY Signal - Resistance Breakout", 
+     message="BUY SIGNAL TRIGGERED! Resistance line broken. Check chart for entry and exit levels.")
 
 alertcondition(supportBreakout, 
-     title="Support Breakout (SELL)", 
-     message="SUPPORT BREAKOUT! SELL signal triggered. Check chart for entry, stop loss, and take profit levels.")
+     title="🔴 SELL Signal - Support Breakout", 
+     message="SELL SIGNAL TRIGGERED! Support line broken. Check chart for entry and exit levels.")
 
 alertcondition(resistanceBreakout or supportBreakout, 
-     title="Any Breakout Signal", 
-     message="BREAKOUT ALERT! New trade signal. Check chart for direction and trade levels.")
+     title="⚡ Any Breakout Alert", 
+     message="BREAKOUT DETECTED! New trading opportunity. Review chart for signal details.")
 
-// For webhook integration with dynamic values
+// Webhook alerts with JSON format
 alertcondition(resistanceBreakout, 
-     title="BUY Signal (Webhook)", 
-     message='{"action": "BUY", "symbol": "{{ticker}}", "price": "{{close}}", "time": "{{time}}"}')
+     title="📊 BUY Webhook Signal", 
+     message='{"signal": "BUY", "symbol": "{{ticker}}", "entry": "{{close}}", "timestamp": "{{time}}"}')
 
 alertcondition(supportBreakout, 
-     title="SELL Signal (Webhook)", 
-     message='{"action": "SELL", "symbol": "{{ticker}}", "price": "{{close}}", "time": "{{time}}"}')
+     title="📊 SELL Webhook Signal", 
+     message='{"signal": "SELL", "symbol": "{{ticker}}", "entry": "{{close}}", "timestamp": "{{time}}"}')
