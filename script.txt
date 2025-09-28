@@ -1,5 +1,5 @@
 //@version=6
-indicator("Trendline Breakout + MACD Strategy", overlay=true, max_lines_count=500, max_labels_count=500)
+indicator("Complete Trendline + MACD Divergence System", overlay=true, max_lines_count=500, max_labels_count=500)
 
 // ==================== USER INPUTS ====================
 // MACD Settings
@@ -11,14 +11,25 @@ macdSignalLength = input.int(9, "MACD Signal Length", minval=1, group="MACD Sett
 swingPeriod = input.int(5, "Swing Detection Period", minval=2, maxval=20, group="Trendline Settings")
 trendlineLength = input.int(50, "Trendline Extension Length", minval=10, group="Trendline Settings")
 
+// Divergence Settings
+divergenceLookback = input.int(40, "Divergence Lookback Period", minval=10, group="Divergence Settings")
+showDivergences = input.bool(true, "Show Divergences", group="Divergence Settings")
+divergenceLineWidth = input.int(2, "Divergence Line Width", minval=1, maxval=5, group="Divergence Settings")
+
 // Risk Management
 stopLossBuffer = input.float(0.2, "Stop Loss Buffer %", minval=0.1, step=0.1, group="Risk Management")
 stopLossLookback = input.int(10, "Stop Loss Lookback Bars", minval=5, group="Risk Management")
 
 // Visual Settings
 showTrendlines = input.bool(true, "Show Trendlines", group="Visual Settings")
-showMacdOnChart = input.bool(true, "Show MACD on Chart", group="Visual Settings")
+showMacdPanel = input.bool(true, "Show MACD Panel", group="Visual Settings")
 showStopLoss = input.bool(true, "Show Stop Loss Levels", group="Visual Settings")
+
+// Colors
+bullDivColor = input.color(color.new(color.green, 0), "Bullish Divergence Color", group="Colors")
+bearDivColor = input.color(color.new(color.red, 0), "Bearish Divergence Color", group="Colors")
+trendlineResColor = input.color(color.new(color.red, 30), "Resistance Trendline Color", group="Colors")
+trendlineSupColor = input.color(color.new(color.blue, 30), "Support Trendline Color", group="Colors")
 
 // ==================== MACD CALCULATION ====================
 [macdLine, signalLine, histogram] = ta.macd(close, macdFastLength, macdSlowLength, macdSignalLength)
@@ -26,10 +37,10 @@ macdBullish = macdLine > signalLine
 macdBearish = macdLine < signalLine
 
 // ==================== SWING DETECTION ====================
-swingHigh = ta.pivothigh(high, swingPeriod, swingPeriod)
-swingLow = ta.pivotlow(low, swingPeriod, swingPeriod)
+priceSwingHigh = ta.pivothigh(high, swingPeriod, swingPeriod)
+priceSwingLow = ta.pivotlow(low, swingPeriod, swingPeriod)
 
-// Variables to store last two swing points
+// Variables for trendlines
 var float lastHighPrice = na
 var int lastHighBar = na
 var float prevHighPrice = na
@@ -41,21 +52,61 @@ var float prevLowPrice = na
 var int prevLowBar = na
 
 // Update swing highs
-if not na(swingHigh)
+if not na(priceSwingHigh)
     prevHighPrice := lastHighPrice
     prevHighBar := lastHighBar
-    lastHighPrice := swingHigh
+    lastHighPrice := priceSwingHigh
     lastHighBar := bar_index - swingPeriod
 
 // Update swing lows
-if not na(swingLow)
+if not na(priceSwingLow)
     prevLowPrice := lastLowPrice
     prevLowBar := lastLowBar
-    lastLowPrice := swingLow
+    lastLowPrice := priceSwingLow
     lastLowBar := bar_index - swingPeriod
 
+// ==================== DIVERGENCE DETECTION ====================
+// Variables for divergence
+var float priceLow1 = na
+var float priceLow2 = na
+var int priceLowBar1 = na
+var int priceLowBar2 = na
+var float priceHigh1 = na
+var float priceHigh2 = na
+var int priceHighBar1 = na
+var int priceHighBar2 = na
+
+// Update price lows for divergence
+if not na(priceSwingLow)
+    priceLow2 := priceLow1
+    priceLowBar2 := priceLowBar1
+    priceLow1 := priceSwingLow
+    priceLowBar1 := bar_index - swingPeriod
+
+// Update price highs for divergence
+if not na(priceSwingHigh)
+    priceHigh2 := priceHigh1
+    priceHighBar2 := priceHighBar1
+    priceHigh1 := priceSwingHigh
+    priceHighBar1 := bar_index - swingPeriod
+
+// MACD values at swing points
+macdAtLow1 = not na(priceLowBar1) ? macdLine[bar_index - priceLowBar1] : na
+macdAtLow2 = not na(priceLowBar2) ? macdLine[bar_index - priceLowBar2] : na
+macdAtHigh1 = not na(priceHighBar1) ? macdLine[bar_index - priceHighBar1] : na
+macdAtHigh2 = not na(priceHighBar2) ? macdLine[bar_index - priceHighBar2] : na
+
+// Check for divergences
+bullishDiv = not na(priceLow1) and not na(priceLow2) and not na(macdAtLow1) and not na(macdAtLow2) and
+             priceLow1 < priceLow2 and macdAtLow1 > macdAtLow2 and
+             bar_index - priceLowBar1 <= divergenceLookback
+
+bearishDiv = not na(priceHigh1) and not na(priceHigh2) and not na(macdAtHigh1) and not na(macdAtHigh2) and
+             priceHigh1 > priceHigh2 and macdAtHigh1 < macdAtHigh2 and
+             bar_index - priceHighBar1 <= divergenceLookback
+
 // ==================== TRENDLINE CALCULATION ====================
-// Calculate resistance (descending) trendline
+// Resistance trendline
 resistanceSlope = 0.0
 resistanceIntercept = 0.0
 hasResistance = false
@@ -63,9 +114,9 @@ hasResistance = false
 if not na(prevHighPrice) and not na(lastHighPrice) and prevHighBar != lastHighBar
     resistanceSlope := (lastHighPrice - prevHighPrice) / (lastHighBar - prevHighBar)
     resistanceIntercept := prevHighPrice - resistanceSlope * prevHighBar
-    hasResistance := resistanceSlope < 0  // Only descending lines for resistance
+    hasResistance := resistanceSlope < 0
 
-// Calculate support (ascending) trendline
+// Support trendline
 supportSlope = 0.0
 supportIntercept = 0.0
 hasSupport = false
@@ -73,38 +124,32 @@ hasSupport = false
 if not na(prevLowPrice) and not na(lastLowPrice) and prevLowBar != lastLowBar
     supportSlope := (lastLowPrice - prevLowPrice) / (lastLowBar - prevLowBar)
     supportIntercept := prevLowPrice - supportSlope * prevLowBar
-    hasSupport := supportSlope > 0  // Only ascending lines for support
+    hasSupport := supportSlope > 0
 
 // Current trendline values
 resistanceValue = hasResistance ? resistanceIntercept + resistanceSlope * bar_index : na
 supportValue = hasSupport ? supportIntercept + supportSlope * bar_index : na
 
 // ==================== BREAKOUT DETECTION ====================
-// Buy signal: Break above resistance + MACD bullish
 resistanceBreak = hasResistance and close > resistanceValue and close[1] <= resistanceValue[1]
-buySignal = resistanceBreak and macdBullish
-
-// Sell signal: Break below support + MACD bearish
 supportBreak = hasSupport and close < supportValue and close[1] >= supportValue[1]
+
+buySignal = resistanceBreak and macdBullish
 sellSignal = supportBreak and macdBearish
 
-// ==================== SIGNAL MANAGEMENT ====================
-// Prevent duplicate signals
+// Signal management
 var int lastBuyBar = 0
 var int lastSellBar = 0
 
-// Valid buy signal (no recent buy)
 validBuy = buySignal and (bar_index - lastBuyBar > 10)
 if validBuy
     lastBuyBar := bar_index
 
-// Valid sell signal (no recent sell)
 validSell = sellSignal and (bar_index - lastSellBar > 10)
 if validSell
     lastSellBar := bar_index
 
 // ==================== STOP LOSS CALCULATION ====================
-// Calculate stop loss levels on every bar
 lowestLow = ta.lowest(low, stopLossLookback)
 highestHigh = ta.highest(high, stopLossLookback)
 
@@ -117,28 +162,48 @@ var line resistanceLine = na
 var line supportLine = na
 
 if showTrendlines
-    // Delete old lines
     if not na(resistanceLine)
         line.delete(resistanceLine)
     if not na(supportLine)
         line.delete(supportLine)
     
-    // Draw resistance line
     if hasResistance and not na(prevHighBar)
         resistanceLine := line.new(prevHighBar, prevHighPrice, bar_index + trendlineLength, 
              resistanceValue + resistanceSlope * trendlineLength,
-             color=color.red, width=2, style=line.style_dashed)
+             color=trendlineResColor, width=2, style=line.style_dashed)
     
-    // Draw support line
     if hasSupport and not na(prevLowBar)
         supportLine := line.new(prevLowBar, prevLowPrice, bar_index + trendlineLength, 
              supportValue + supportSlope * trendlineLength,
-             color=color.green, width=2, style=line.style_dashed)
+             color=trendlineSupColor, width=2, style=line.style_dashed)
 
-// ==================== SIGNAL LABELS ====================
-// Buy signal
+// Draw divergences on price chart
+if showDivergences
+    if bullishDiv and bar_index - priceLowBar1 <= 5
+        line.new(priceLowBar2, priceLow2, priceLowBar1, priceLow1,
+             color=bullDivColor, width=divergenceLineWidth, style=line.style_solid)
+        
+        label.new(priceLowBar1, priceLow1 * 0.995,
+             text="BULL DIV",
+             color=bullDivColor,
+             style=label.style_label_up,
+             textcolor=color.white,
+             size=size.small)
+    
+    if bearishDiv and bar_index - priceHighBar1 <= 5
+        line.new(priceHighBar2, priceHigh2, priceHighBar1, priceHigh1,
+             color=bearDivColor, width=divergenceLineWidth, style=line.style_solid)
+        
+        label.new(priceHighBar1, priceHigh1 * 1.005,
+             text="BEAR DIV",
+             color=bearDivColor,
+             style=label.style_label_down,
+             textcolor=color.white,
+             size=size.small)
+
+// Buy/Sell signals
 if validBuy
-    buyLabel = label.new(bar_index, low * 0.995,
+    label.new(bar_index, low * 0.995,
          text="BUY\n" + str.tostring(close, "#.##"),
          color=color.green,
          style=label.style_label_up,
@@ -146,7 +211,6 @@ if validBuy
          size=size.normal)
     
     if showStopLoss
-        // Stop loss marker
         label.new(bar_index + 5, buyStopLoss,
              text="SL: " + str.tostring(buyStopLoss, "#.##"),
              color=color.red,
@@ -154,13 +218,11 @@ if validBuy
              textcolor=color.white,
              size=size.small)
         
-        // Stop loss line
         line.new(bar_index, buyStopLoss, bar_index + 20, buyStopLoss,
              color=color.red, width=1, style=line.style_dotted)
 
-// Sell signal
 if validSell
-    sellLabel = label.new(bar_index, high * 1.005,
+    label.new(bar_index, high * 1.005,
          text="SELL\n" + str.tostring(close, "#.##"),
          color=color.red,
          style=label.style_label_down,
@@ -168,7 +230,6 @@ if validSell
          size=size.normal)
     
     if showStopLoss
-        // Stop loss marker
         label.new(bar_index + 5, sellStopLoss,
              text="SL: " + str.tostring(sellStopLoss, "#.##"),
              color=color.red,
@@ -176,60 +237,44 @@ if validSell
              textcolor=color.white,
              size=size.small)
         
-        // Stop loss line
         line.new(bar_index, sellStopLoss, bar_index + 20, sellStopLoss,
              color=color.red, width=1, style=line.style_dotted)
 
-// ==================== MACD ON CHART ====================
-// Scale MACD to price chart
-priceHigh = ta.highest(high, 50)
-priceLow = ta.lowest(low, 50)
-priceRange = priceHigh - priceLow
-macdMax = ta.highest(math.abs(macdLine), 100)
+// ==================== MACD PANEL ====================
+// Create MACD panel below price
+macdPanelHeight = ta.highest(high, 50) - ta.lowest(low, 50)
+macdPanelBottom = ta.lowest(low, 50) - macdPanelHeight * 0.3
+macdScale = macdPanelHeight * 0.2 / ta.highest(math.abs(macdLine), 50)
 
-macdScale = priceRange * 0.1
-macdOffset = priceLow - priceRange * 0.15
+scaledMacd = showMacdPanel ? macdLine * macdScale + macdPanelBottom : na
+scaledSignal = showMacdPanel ? signalLine * macdScale + macdPanelBottom : na
+zeroLine = showMacdPanel ? macdPanelBottom : na
 
-scaledMacd = showMacdOnChart and macdMax > 0 ? (macdLine / macdMax) * macdScale + macdOffset : na
-scaledSignal = showMacdOnChart and macdMax > 0 ? (signalLine / macdMax) * macdScale + macdOffset : na
+// Plot MACD
+plot(scaledMacd, "MACD", color=color.blue, linewidth=2)
+plot(scaledSignal, "Signal", color=color.orange, linewidth=1)
+plot(zeroLine, "Zero", color=color.gray, linewidth=1, style=plot.style_line)
 
-plot(scaledMacd, "MACD", color=color.new(color.blue, 0), linewidth=2)
-plot(scaledSignal, "Signal", color=color.new(color.orange, 0), linewidth=1)
-
-// ==================== INFO PANEL ====================
-var table infoPanel = table.new(position.top_right, 2, 5, bgcolor=color.new(color.black, 80), border_width=1)
-
-if barstate.islast
-    table.cell(infoPanel, 0, 0, "INDICATOR STATUS", text_color=color.white, text_size=size.small)
-    table.merge_cells(infoPanel, 0, 0, 1, 0)
+// Draw divergences on MACD
+if showDivergences and showMacdPanel
+    if bullishDiv and bar_index - priceLowBar1 <= 5
+        macdY1 = macdAtLow1 * macdScale + macdPanelBottom
+        macdY2 = macdAtLow2 * macdScale + macdPanelBottom
+        line.new(priceLowBar2, macdY2, priceLowBar1, macdY1,
+             color=bullDivColor, width=divergenceLineWidth, style=line.style_dotted)
     
-    table.cell(infoPanel, 0, 1, "MACD:", text_color=color.gray, text_size=size.tiny)
-    table.cell(infoPanel, 1, 1, macdBullish ? "BULLISH" : "BEARISH", 
-         text_color=macdBullish ? color.green : color.red, text_size=size.tiny)
-    
-    table.cell(infoPanel, 0, 2, "Resistance:", text_color=color.gray, text_size=size.tiny)
-    table.cell(infoPanel, 1, 2, hasResistance ? str.tostring(resistanceValue, "#.##") : "None", 
-         text_color=hasResistance ? color.red : color.gray, text_size=size.tiny)
-    
-    table.cell(infoPanel, 0, 3, "Support:", text_color=color.gray, text_size=size.tiny)
-    table.cell(infoPanel, 1, 3, hasSupport ? str.tostring(supportValue, "#.##") : "None", 
-         text_color=hasSupport ? color.green : color.gray, text_size=size.tiny)
-    
-    table.cell(infoPanel, 0, 4, "Last Swing:", text_color=color.gray, text_size=size.tiny)
-    table.cell(infoPanel, 1, 4, not na(lastHighBar) ? str.tostring(bar_index - lastHighBar) + " bars ago" : "None", 
-         text_color=color.gray, text_size=size.tiny)
+    if bearishDiv and bar_index - priceHighBar1 <= 5
+        macdY1 = macdAtHigh1 * macdScale + macdPanelBottom
+        macdY2 = macdAtHigh2 * macdScale + macdPanelBottom
+        line.new(priceHighBar2, macdY2, priceHighBar1, macdY1,
+             color=bearDivColor, width=divergenceLineWidth, style=line.style_dotted)
 
-// ==================== DEBUG PLOTS ====================
-// Plot swing points for debugging
-plotshape(not na(swingHigh), "Swing High", shape.triangledown, location.abovebar, color.red, size=size.tiny)
-plotshape(not na(swingLow), "Swing Low", shape.triangleup, location.belowbar, color.green, size=size.tiny)
+// Swing markers
+plotshape(not na(priceSwingHigh), "Swing High", shape.triangledown, location.abovebar, color.red, size=size.tiny)
+plotshape(not na(priceSwingLow), "Swing Low", shape.triangleup, location.belowbar, color.green, size=size.tiny)
 
-// ==================== ALERTS ====================
-alertcondition(validBuy, "Buy Signal", "Buy signal: Resistance break + MACD bullish at {{close}}")
-alertcondition(validSell, "Sell Signal", "Sell signal: Support break + MACD bearish at {{close}}")
-
-// ==================== PLOTS FOR DATA EXPORT ====================
-plot(validBuy ? close : na, "Buy Entry", display=display.none)
-plot(validSell ? close : na, "Sell Entry", display=display.none)
-plot(validBuy ? buyStopLoss : na, "Buy Stop Loss", display=display.none)
-plot(validSell ? sellStopLoss : na, "Sell Stop Loss", display=display.none)
+// Alerts
+alertcondition(validBuy, "Buy Signal", "Buy signal triggered")
+alertcondition(validSell, "Sell Signal", "Sell signal triggered")
+alertcondition(bullishDiv, "Bullish Divergence", "Bullish divergence detected")
+alertcondition(bearishDiv, "Bearish Divergence", "Bearish divergence detected")
